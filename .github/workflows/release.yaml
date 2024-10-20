@@ -15,14 +15,15 @@ jobs:
   build-and-push-image:
     runs-on: ubuntu-latest
 
+    # See https://docs.github.com/en/actions/using-jobs/assigning-permissions-to-jobs#defining-access-for-the-github_token-scopes
     permissions:
       actions: none
       checks: none
       contents: none
       deployments: none
+      discussions: none
       id-token: none
       issues: none
-      #metadata: read
       packages: write
       pages: none
       pull-requests: none
@@ -32,7 +33,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4.1.1
+        uses: actions/checkout@v4.2.1
 
       - name: Prepare build date Metadata
         id: meta_build_date
@@ -56,14 +57,14 @@ jobs:
             build-date=${{ steps.meta_build_date.outputs.created }}
 
       - name: Log in to the Container registry
-        uses: docker/login-action@v3.0.0
+        uses: docker/login-action@v3.3.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v5.1.0
+        uses: docker/build-push-action@v6.9.0
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' && startsWith(github.event.ref, 'refs/tags/v') }}
