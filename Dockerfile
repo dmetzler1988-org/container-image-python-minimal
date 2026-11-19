@@ -70,7 +70,10 @@ RUN set -eu \
       --with-system-libmpdec \
       --without-static-libpython \
       $optimize \
+ # PGO trains on Python's own tests, and since 3.13 a failing one aborts the build. Two test_re locale tests
+ # fail on musl, which has no real ISO-8859-1 locale; they are left out of the training run only.
  && make -j"$(nproc)" \
+      PROFILE_TASK='-m test --pgo --timeout=$(TESTTIMEOUT) --ignore test_locale_caching --ignore test_locale_compiled' \
  && make install \
  && minor="${PYTHON_VERSION%.*}" \
  && test "$(/usr/local/bin/python3 -c 'import platform; print(platform.python_version())')" = "$PYTHON_VERSION" \

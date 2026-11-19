@@ -146,7 +146,8 @@ jobs:
           echo "build=true" >> "$GITHUB_OUTPUT"
 
   build:
-    name: Build
+    # Without this, GitHub names each matrix job after every matrix value, including the full build args.
+    name: Build ${{ matrix.image.key }}
     needs: resolve
     if: needs.resolve.outputs.build == 'true'
     permissions:
