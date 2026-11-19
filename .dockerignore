@@ -39,3 +39,6 @@ ehthumbs_vista.db
 ## Project specific ##
 LICENSE
 README.md
+images.json
+tests
+versions.lock

@@ -1,0 +1,47 @@
+name: Rescan
+
+on:
+  schedule:
+    - cron: "51 5 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  targets:
+    name: Find published tags
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      refs: ${{ steps.lock.outputs.refs }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read images.json and versions.lock
+        id: lock
+        run: |
+          if [ ! -f versions.lock ]; then
+            echo "::notice::No release yet, nothing to rescan."
+            echo "refs=[]" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # One moving tag per image: the version line plus its suffix, e.g. 3.14 and 3.14-dev.
+          refs=$(jq -c '[.[] | "ghcr.io/dmetzler1988-org/python-minimal:\(.line)\(.tagSuffix)"]' images.json)
+          printf 'refs=%s\n' "$refs" >> "$GITHUB_OUTPUT"
+
+  rescan:
+    name: Rescan
+    needs: targets
+    if: needs.targets.outputs.refs != '[]'
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        ref: ${{ fromJSON(needs.targets.outputs.refs) }}
+    uses: dmetzler1988-org/container-workflows/.github/workflows/rescan.yaml@7938b91619816ac33b2dd06ccdc8f142a1da749f # v2.0.1
+    with:
+      image-ref: ${{ matrix.ref }}

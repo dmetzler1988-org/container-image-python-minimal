@@ -1,0 +1,197 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    # Hourly: cheap check for a new Python patch release; builds only when one is out.
+    - cron: "7 * * * *"
+    # Daily, after alpine-minimal's build: always rebuild, to pick up base and package fixes.
+    - cron: "47 4 * * *"
+  workflow_dispatch:
+    inputs:
+      level:
+        description: Raise the release level to at least this one.
+        type: choice
+        options: [none, patch, minor, major]
+        default: none
+      dry-run:
+        description: Only report version, tags and versions.lock; publish nothing.
+        type: boolean
+        default: true
+
+permissions: {}
+
+env:
+  IMAGE: ghcr.io/dmetzler1988-org/python-minimal
+  HOURLY_CRON: "7 * * * *"
+  PYTHON_RELEASES_URL: https://www.python.org/api/v2/downloads/release/?is_published=true&pre_release=false
+  VERSION_COMMAND: python3 -c 'import platform; print(platform.python_version())'
+
+jobs:
+  resolve:
+    name: Resolve versions
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      build: ${{ steps.gate.outputs.build }}
+      image: ${{ env.IMAGE }}
+      base-name: ${{ steps.base.outputs.name }}
+      tag: ${{ steps.base.outputs.tag }}
+      digest: ${{ steps.base.outputs.digest }}
+      images: ${{ steps.images.outputs.images }}
+      base: ${{ steps.images.outputs.base }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve base image
+        id: base
+        run: |
+          from=$(sed -n 's/^FROM \(ghcr\.io\/[^ ]*\/alpine-minimal\):\([0-9][0-9.]*\) AS base$/\1 \2/p' Dockerfile | head -n 1)
+          if [ -z "$from" ]; then
+            echo "::error::Dockerfile has no 'FROM ghcr.io/<owner>/alpine-minimal:<version> AS base' line"
+            exit 1
+          fi
+          name=${from% *}
+          tag=${from#* }
+          digest=$(docker buildx imagetools inspect "$name:$tag" --format '{{json .Manifest}}' | jq -r '.digest')
+          alpine=$(docker run --rm "$name:$tag@$digest" cat /etc/alpine-release)
+          {
+            printf 'name=%s\n' "$name"
+            printf 'tag=%s\n' "$tag"
+            printf 'digest=%s\n' "$digest"
+            printf 'alpine=%s\n' "$alpine"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Resolve newest Python patch per line
+        id: python
+        run: |
+          # simplified: mirrors container-workflows/scripts/upstream-latest.sh, which a calling repo cannot
+          # run without a second pin; move it into a shared action when a second repo needs the lookup.
+          releases=$(curl -fsS --retry 3 --connect-timeout 10 --max-time 60 "$PYTHON_RELEASES_URL")
+          versions='{}'
+          # A for loop, not a pipe: an error must stop this step, not only a subshell.
+          for line in $(jq -r '[.[].line] | unique | .[]' images.json); do
+            latest=$(printf '%s' "$releases" | jq -r --arg line "$line" '
+              [.[] | .name | capture("^Python (?<v>[0-9]+\\.[0-9]+\\.[0-9]+)$")? | .v
+                   | select(startswith($line + "."))]
+              | sort_by(split(".") | map(tonumber)) | last // empty')
+            if [ -z "$latest" ]; then
+              echo "::error::No published Python $line release found"
+              exit 1
+            fi
+            versions=$(printf '%s' "$versions" | jq -c --arg line "$line" --arg v "$latest" '. + {($line): $v}')
+          done
+          printf 'versions=%s\n' "$versions" >> "$GITHUB_OUTPUT"
+
+      - name: Build image list
+        id: images
+        env:
+          VERSIONS: ${{ steps.python.outputs.versions }}
+          BASE_NAME: ${{ steps.base.outputs.name }}
+          BASE_TAG: ${{ steps.base.outputs.tag }}
+          BASE_DIGEST: ${{ steps.base.outputs.digest }}
+          ALPINE: ${{ steps.base.outputs.alpine }}
+        run: |
+          images=$(jq -c --argjson versions "$VERSIONS" --arg base "$BASE_NAME:$BASE_TAG" --arg digest "$BASE_DIGEST" \
+            --arg cmd "$VERSION_COMMAND" '[.[] | {
+              key, target,
+              "build-args": "PYTHON_VERSION=\($versions[.line])\nALPINE_MINIMAL_IMAGE=\($base)\nALPINE_MINIMAL_DIGEST=\($digest)",
+              "tag-suffix": .tagSuffix, "major-tag": .majorTag, latest,
+              "version-command": $cmd
+            }]' images.json)
+          base=$(jq -n -c --arg image "$BASE_NAME:$BASE_TAG" --arg digest "$BASE_DIGEST" --arg alpine "$ALPINE" \
+            '{image: $image, digest: $digest, alpineVersion: $alpine}')
+          printf 'images=%s\n' "$images" >> "$GITHUB_OUTPUT"
+          printf 'base=%s\n' "$base" >> "$GITHUB_OUTPUT"
+
+      - name: Decide whether to build
+        id: gate
+        env:
+          EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
+          VERSIONS: ${{ steps.python.outputs.versions }}
+        run: |
+          if [ "$EVENT" != "schedule" ] || [ "$SCHEDULE" != "$HOURLY_CRON" ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ ! -f versions.lock ]; then
+            echo "::notice::No release yet; building."
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          version=$(jq -r '.version' versions.lock)
+          reason=""
+          for row in $(jq -c '.[] | {key, line, tagSuffix}' images.json); do
+            key=$(printf '%s' "$row" | jq -r '.key')
+            line=$(printf '%s' "$row" | jq -r '.line')
+            suffix=$(printf '%s' "$row" | jq -r '.tagSuffix')
+            recorded=$(jq -r --arg k "$key" '.images[$k].upstreamVersion // ""' versions.lock)
+            newest=$(printf '%s' "$VERSIONS" | jq -r --arg l "$line" '.[$l]')
+            if [ "$recorded" != "$newest" ]; then
+              reason="$reason $key: $recorded -> $newest;"
+            elif ! docker buildx imagetools inspect "$IMAGE:$recorded$suffix-$version" > /dev/null 2>&1; then
+              reason="$reason $key: release $version not published;"
+            fi
+          done
+          if [ -z "$reason" ]; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::notice::Building:$reason"
+          echo "build=true" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build
+    needs: resolve
+    if: needs.resolve.outputs.build == 'true'
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: true
+      matrix:
+        image: ${{ fromJSON(needs.resolve.outputs.images) }}
+    uses: dmetzler1988-org/container-workflows/.github/workflows/build-image.yaml@7938b91619816ac33b2dd06ccdc8f142a1da749f # v2.0.1
+    with:
+      image-key: ${{ matrix.image.key }}
+      target: ${{ matrix.image.target }}
+      build-contexts: ${{ needs.resolve.outputs.base-name }}:${{ needs.resolve.outputs.tag }}=docker-image://${{ needs.resolve.outputs.base-name }}:${{ needs.resolve.outputs.tag }}@${{ needs.resolve.outputs.digest }}
+      build-args: ${{ matrix.image.build-args }}
+      version-command: ${{ matrix.image.version-command }}
+
+  release:
+    name: Release
+    if: github.event_name != 'pull_request' && needs.resolve.outputs.build == 'true'
+    needs: [resolve, build]
+    # Here, not on the workflow: hourly runs that build nothing must never cancel a waiting release.
+    concurrency:
+      group: release-${{ github.repository }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+    uses: dmetzler1988-org/container-workflows/.github/workflows/release.yaml@7938b91619816ac33b2dd06ccdc8f142a1da749f # v2.0.1
+    with:
+      image: ${{ needs.resolve.outputs.image }}
+      images: ${{ needs.resolve.outputs.images }}
+      base: ${{ needs.resolve.outputs.base }}
+      build-contexts: ${{ needs.resolve.outputs.base-name }}:${{ needs.resolve.outputs.tag }}=docker-image://${{ needs.resolve.outputs.base-name }}:${{ needs.resolve.outputs.tag }}@${{ needs.resolve.outputs.digest }}
+      level: ${{ inputs.level || 'none' }}
+      release-paths: Dockerfile images.json
+      # Dry run everywhere until the first release is checked: push and schedule always, manual runs unless unticked.
+      dry-run: ${{ github.event_name != 'workflow_dispatch' || inputs.dry-run }}
+
+  automerge:
+    name: Dependabot auto-merge
+    if: github.event_name == 'pull_request'
+    needs: build
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: dmetzler1988-org/container-workflows/.github/workflows/dependabot-automerge.yaml@7938b91619816ac33b2dd06ccdc8f142a1da749f # v2.0.1

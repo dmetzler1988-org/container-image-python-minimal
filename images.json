@@ -1,0 +1,6 @@
+[
+  { "key": "3.14", "line": "3.14", "target": "runtime", "tagSuffix": "", "majorTag": true, "latest": true },
+  { "key": "3.14-dev", "line": "3.14", "target": "dev", "tagSuffix": "-dev", "majorTag": true, "latest": false },
+  { "key": "3.13", "line": "3.13", "target": "runtime", "tagSuffix": "", "majorTag": false, "latest": false },
+  { "key": "3.13-dev", "line": "3.13", "target": "dev", "tagSuffix": "-dev", "majorTag": false, "latest": false }
+]
