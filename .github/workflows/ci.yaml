@@ -19,7 +19,7 @@ on:
       dry-run:
         description: Only report version, tags and versions.lock; publish nothing.
         type: boolean
-        default: true
+        default: false
 
 permissions: {}
 
@@ -185,8 +185,7 @@ jobs:
       build-contexts: ${{ needs.resolve.outputs.base-name }}:${{ needs.resolve.outputs.tag }}=docker-image://${{ needs.resolve.outputs.base-name }}:${{ needs.resolve.outputs.tag }}@${{ needs.resolve.outputs.digest }}
       level: ${{ inputs.level || 'none' }}
       release-paths: Dockerfile images.json
-      # Dry run everywhere until the first release is checked: push and schedule always, manual runs unless unticked.
-      dry-run: ${{ github.event_name != 'workflow_dispatch' || inputs.dry-run }}
+      dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry-run }}
 
   automerge:
     name: Dependabot auto-merge
