@@ -1,0 +1,38 @@
+{
+  "version": "1.0.0",
+  "base": {
+    "image": "ghcr.io/dmetzler1988-org/alpine-minimal:3.24",
+    "digest": "sha256:5187c3a6cee4114bbb0f9297687f33523dc918c8fc43d95a23df85e09616c728",
+    "alpineVersion": "3.24.4"
+  },
+  "images": {
+    "3.14": {
+      "upstreamVersion": "3.14.10",
+      "packages": {
+        "linux/amd64": "ebf076cf71c63f427a3eca4ca5b3b657f9fb8067656c3cd89c145b0ccd3337d8",
+        "linux/arm64": "ebf076cf71c63f427a3eca4ca5b3b657f9fb8067656c3cd89c145b0ccd3337d8"
+      }
+    },
+    "3.14-dev": {
+      "upstreamVersion": "3.14.10",
+      "packages": {
+        "linux/amd64": "398ef1b226acf257316d86175506dd58566f73af3af559d19be3ac9d18031d03",
+        "linux/arm64": "398ef1b226acf257316d86175506dd58566f73af3af559d19be3ac9d18031d03"
+      }
+    },
+    "3.13": {
+      "upstreamVersion": "3.13.18",
+      "packages": {
+        "linux/amd64": "ebf076cf71c63f427a3eca4ca5b3b657f9fb8067656c3cd89c145b0ccd3337d8",
+        "linux/arm64": "ebf076cf71c63f427a3eca4ca5b3b657f9fb8067656c3cd89c145b0ccd3337d8"
+      }
+    },
+    "3.13-dev": {
+      "upstreamVersion": "3.13.18",
+      "packages": {
+        "linux/amd64": "398ef1b226acf257316d86175506dd58566f73af3af559d19be3ac9d18031d03",
+        "linux/arm64": "398ef1b226acf257316d86175506dd58566f73af3af559d19be3ac9d18031d03"
+      }
+    }
+  }
+}
