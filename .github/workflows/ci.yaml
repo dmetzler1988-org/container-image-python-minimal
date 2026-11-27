@@ -157,7 +157,7 @@ jobs:
       fail-fast: true
       matrix:
         image: ${{ fromJSON(needs.resolve.outputs.images) }}
-    uses: dmetzler1988-org/container-workflows/.github/workflows/build-image.yaml@7938b91619816ac33b2dd06ccdc8f142a1da749f # v2.0.1
+    uses: dmetzler1988-org/container-workflows/.github/workflows/build-image.yaml@2f4c0f882c001376ac83a797917b625941cc46fa # v2.0.2
     with:
       image-key: ${{ matrix.image.key }}
       target: ${{ matrix.image.target }}
@@ -177,7 +177,7 @@ jobs:
       contents: write
       packages: write
       id-token: write
-    uses: dmetzler1988-org/container-workflows/.github/workflows/release.yaml@7938b91619816ac33b2dd06ccdc8f142a1da749f # v2.0.1
+    uses: dmetzler1988-org/container-workflows/.github/workflows/release.yaml@2f4c0f882c001376ac83a797917b625941cc46fa # v2.0.2
     with:
       image: ${{ needs.resolve.outputs.image }}
       images: ${{ needs.resolve.outputs.images }}
@@ -194,4 +194,4 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    uses: dmetzler1988-org/container-workflows/.github/workflows/dependabot-automerge.yaml@7938b91619816ac33b2dd06ccdc8f142a1da749f # v2.0.1
+    uses: dmetzler1988-org/container-workflows/.github/workflows/dependabot-automerge.yaml@2f4c0f882c001376ac83a797917b625941cc46fa # v2.0.2
