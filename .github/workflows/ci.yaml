@@ -26,7 +26,6 @@ permissions: {}
 env:
   IMAGE: ghcr.io/dmetzler1988-org/python-minimal
   HOURLY_CRON: "7 * * * *"
-  PYTHON_RELEASES_URL: https://www.python.org/api/v2/downloads/release/?is_published=true&pre_release=false
   VERSION_COMMAND: python3 -c 'import platform; print(platform.python_version())'
 
 jobs:
@@ -66,26 +65,16 @@ jobs:
             printf 'alpine=%s\n' "$alpine"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Read version lines
+        id: lines
+        run: printf 'lines=%s\n' "$(jq -c '[.[].line] | unique' images.json)" >> "$GITHUB_OUTPUT"
+
       - name: Resolve newest Python patch per line
         id: python
-        run: |
-          # simplified: mirrors container-workflows/scripts/upstream-latest.sh, which a calling repo cannot
-          # run without a second pin; move it into a shared action when a second repo needs the lookup.
-          releases=$(curl -fsS --retry 3 --connect-timeout 10 --max-time 60 "$PYTHON_RELEASES_URL")
-          versions='{}'
-          # A for loop, not a pipe: an error must stop this step, not only a subshell.
-          for line in $(jq -r '[.[].line] | unique | .[]' images.json); do
-            latest=$(printf '%s' "$releases" | jq -r --arg line "$line" '
-              [.[] | .name | capture("^Python (?<v>[0-9]+\\.[0-9]+\\.[0-9]+)$")? | .v
-                   | select(startswith($line + "."))]
-              | sort_by(split(".") | map(tonumber)) | last // empty')
-            if [ -z "$latest" ]; then
-              echo "::error::No published Python $line release found"
-              exit 1
-            fi
-            versions=$(printf '%s' "$versions" | jq -c --arg line "$line" --arg v "$latest" '. + {($line): $v}')
-          done
-          printf 'versions=%s\n' "$versions" >> "$GITHUB_OUTPUT"
+        uses: dmetzler1988-org/container-workflows/.github/actions/upstream-latest@7ec9be3f14e13ed271cecd78254f748f009f5069 # v2.1.0
+        with:
+          kind: python
+          lines: ${{ steps.lines.outputs.lines }}
 
       - name: Build image list
         id: images
@@ -157,7 +146,7 @@ jobs:
       fail-fast: true
       matrix:
         image: ${{ fromJSON(needs.resolve.outputs.images) }}
-    uses: dmetzler1988-org/container-workflows/.github/workflows/build-image.yaml@2f4c0f882c001376ac83a797917b625941cc46fa # v2.0.2
+    uses: dmetzler1988-org/container-workflows/.github/workflows/build-image.yaml@7ec9be3f14e13ed271cecd78254f748f009f5069 # v2.1.0
     with:
       image-key: ${{ matrix.image.key }}
       target: ${{ matrix.image.target }}
@@ -177,7 +166,7 @@ jobs:
       contents: write
       packages: write
       id-token: write
-    uses: dmetzler1988-org/container-workflows/.github/workflows/release.yaml@2f4c0f882c001376ac83a797917b625941cc46fa # v2.0.2
+    uses: dmetzler1988-org/container-workflows/.github/workflows/release.yaml@7ec9be3f14e13ed271cecd78254f748f009f5069 # v2.1.0
     with:
       image: ${{ needs.resolve.outputs.image }}
       images: ${{ needs.resolve.outputs.images }}
@@ -194,4 +183,4 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-    uses: dmetzler1988-org/container-workflows/.github/workflows/dependabot-automerge.yaml@2f4c0f882c001376ac83a797917b625941cc46fa # v2.0.2
+    uses: dmetzler1988-org/container-workflows/.github/workflows/dependabot-automerge.yaml@7ec9be3f14e13ed271cecd78254f748f009f5069 # v2.1.0

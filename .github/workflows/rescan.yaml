@@ -42,6 +42,6 @@ jobs:
       fail-fast: false
       matrix:
         ref: ${{ fromJSON(needs.targets.outputs.refs) }}
-    uses: dmetzler1988-org/container-workflows/.github/workflows/rescan.yaml@2f4c0f882c001376ac83a797917b625941cc46fa # v2.0.2
+    uses: dmetzler1988-org/container-workflows/.github/workflows/rescan.yaml@7ec9be3f14e13ed271cecd78254f748f009f5069 # v2.1.0
     with:
       image-ref: ${{ matrix.ref }}
